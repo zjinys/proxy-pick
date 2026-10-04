@@ -9,31 +9,38 @@ description: 切换/查看 Clash Verge (mihomo) 代理节点。当用户说"切�
 
 ## 脚本定位（每次使用前先执行）
 
-按优先级选一个，后面的所有 `clash-pick ...` 命令都替换成这个调用形式：
+按平台从本 Skill 的 `templates/`（与本文件同目录）选实现：
 
-1. `command -v clash-pick` 有输出 → 直接用 `clash-pick`
-2. 否则用本 Skill 自带的 `templates/clash-pick`（与本文件同目录），调用形式：
-   ```bash
-   python3 <skill目录>/templates/clash-pick --list
-   ```
+| 平台 | 调用形式 |
+|---|---|
+| Linux / macOS | `python3 <skill目录>/templates/clash-pick --list` |
+| Windows + Python | `python <skill目录>\templates\clash-pick --list` |
+| Windows 无 Python | `powershell -ExecutionPolicy Bypass -File <skill目录>\templates\clash-pick.ps1 -List` |
 
-脚本零依赖，只需要系统有 `python3` 和 `curl`。
+若 `command -v clash-pick` 有输出，也可直接用 `clash-pick`。以下文档里的 `clash-pick ...` 一律替换为按上表选出的调用形式。
+
+两个实现都只依赖平台自带运行时（Python 3 标准库 / Windows 自带 PowerShell），不需要 curl、pip 包等任何额外安装。注意 PowerShell 版参数是 `-List`、`-Group`、`-Top`（单横线）。
 
 ## 前置要求
 
 - Clash Verge (mihomo) 正在运行
-- 能找到 API：脚本会自动探测 `/run/clash-verge-service/users/*/verge-mihomo.sock`；探测失败时按报错提示设置 `CLASH_PICK_SOCK` 或 `CLASH_PICK_API` 环境变量
+- 能找到 API，按平台自动探测：
+  - **Linux**：自动探测 `/run/clash-verge-service/users/*/verge-mihomo.sock`，失败再探测 `http://127.0.0.1:9097` 和 `:9090`
+  - **Windows**：探测 `http://127.0.0.1:9097` 和 `:9090`（Clash Verge 默认开启外部控制器 9097）
+- 探测失败时按报错提示设置环境变量：`CLASH_PICK_API`（如 `http://127.0.0.1:9097`）、`CLASH_PICK_SECRET`（外部控制器密钥）、`CLASH_PICK_SOCK`（仅 Linux/macOS 的 socket 路径）
 
 如果 API 连不上，直接把脚本报错原样告诉用户并停止，不要尝试其他代理方案。
 
 ## 核心命令
 
 ```bash
-clash-pick                    # 刷新默认组(快速机场)测速，自动切换到最快节点
+clash-pick                    # 自动选择默认组（匹配 节点选择/快速机场/Proxy 等常见组名），测速并切到最快
 clash-pick --list             # 只测速并列出排名，不切换
-clash-pick --group 漏网之鱼   # 指定代理组（支持模糊匹配，如 --group 漏网）
+clash-pick --group 漏网之鱼   # 指定代理组（模糊匹配，如 --group 漏网；也匹配英文如 --group proxy）
 clash-pick --top 5            # 只显示前 5 名
 ```
+
+不指定 `--group` 时按优先级匹配常见组名（`节点选择` > `快速机场` > `proxy` > `select` > `节点` > `机场`），都不匹配则取第一个 Selector 组——用户的配置叫什么名字都能跑。
 
 输出解读：
 - `可用 N / 超时 M` — 有效节点数 / 测速超时的节点数
@@ -56,7 +63,7 @@ clash-pick --top 5            # 只显示前 5 名
 
 - 只支持 **Clash Verge (mihomo)**，不适用于 Clash for Windows / ClashX / Surge / V2Ray 等其他客户端。
 - 只能切换节点，不能修改订阅、添加节点、改路由规则。
-- `--group` 只做模糊匹配（如 `--group 漏网` 匹配 `漏网之鱼`），匹配不到会列出所有可选组名。
+- `--group` 只做模糊匹配（如 `--group 漏网` 匹配 `漏网之鱼`），匹配不到会列出所有可选组名；组特别多时最好显式指定 `--group`，避免自动选中不想要的组。
 - 测速目标固定为 `http://www.gstatic.com/generate_204`，超时 3 秒；对 gstatic 快的节点不代表访问特定境外服务也快。
 - 切换节点只影响**走系统代理的流量**，不走代理的进程不受影响。
 
@@ -65,8 +72,9 @@ clash-pick --top 5            # 只显示前 5 名
 如果用户想直接在终端里用：
 
 ```bash
+# Linux / macOS
 sudo cp templates/clash-pick /usr/local/bin/clash-pick
 sudo chmod +x /usr/local/bin/clash-pick
 ```
 
-这是可选项——Skill 本身不需要这一步。
+Windows 无需安装，直接记住 ps1/py 路径即可。这是可选项——Skill 本身不需要这一步。

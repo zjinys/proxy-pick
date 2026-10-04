@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """clash-pick: 刷新 Clash Verge (mihomo) 代理节点延迟，选最快的设为当前。
 
+跨平台：只依赖 Python 3 标准库。
+  - Linux:   自动探测 /run/clash-verge-service/users/*/verge-mihomo.sock
+  - Windows: 通过 HTTP 外部控制器连接（见下方环境变量）
+
 用法:
   clash-pick                 # 刷新默认组(快速机场)，选最快节点
   clash-pick --list          # 只测速并列出来，不切换
@@ -8,76 +12,169 @@
   clash-pick --top 5         # 只显示前 N 个
 
 环境变量:
-  CLASH_PICK_SOCK   覆盖 mihomo unix socket 路径
-  CLASH_PICK_API    改用 HTTP API，如 http://127.0.0.1:9097（优先级低于 SOCK）
+  CLASH_PICK_SOCK    覆盖 mihomo unix socket 路径（仅 Linux/macOS）
+  CLASH_PICK_API     HTTP 外部控制器地址，如 http://127.0.0.1:9097
+  CLASH_PICK_SECRET  外部控制器密钥（对应 mihomo 配置的 secret）
 """
+import argparse
 import glob
+import http.client
 import json
 import os
-import subprocess
+import socket
 import sys
 import urllib.parse
-import argparse
 
 TEST_URL = "http://www.gstatic.com/generate_204"
 TIMEOUT = 3000
+DEFAULT_API_PORTS = (9097, 9090)  # Clash Verge 默认 9097，mihomo 默认 9090
+
+IS_WINDOWS = os.name == "nt"
 
 
-def find_base():
-    """返回 (curl 前缀参数, API base)。优先 unix socket，自动探测 uid。"""
+class UnixHTTPConnection(http.client.HTTPConnection):
+    """通过 unix socket 发 HTTP 请求（Linux/macOS）。"""
+
+    def __init__(self, sock_path):
+        super().__init__("localhost")
+        self.sock_path = sock_path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(10)
+        self.sock.connect(self.sock_path)
+
+
+def make_client(sock_path=None, api_url=None, secret=None):
+    """返回一个 req(path, method, data) 调用函数。"""
+    if api_url:
+        u = urllib.parse.urlparse(api_url)
+        host, port = u.hostname, u.port or 80
+
+    def req(path, method="GET", data=None):
+        if sock_path:
+            conn = UnixHTTPConnection(sock_path)
+        else:
+            conn = http.client.HTTPConnection(host, port, timeout=10)
+        headers = {"Content-Type": "application/json"}
+        if secret:
+            headers["Authorization"] = f"Bearer {secret}"
+        body = json.dumps(data) if data is not None else None
+        try:
+            conn.request(method, path, body, headers)
+            resp = conn.getresponse()
+            raw = resp.read()
+        except OSError as e:
+            sys.exit(f"API 连接失败: {e}")
+        finally:
+            conn.close()
+        if resp.status == 401:
+            sys.exit("API 返回 401 未授权：请设置 CLASH_PICK_SECRET 环境变量")
+        if resp.status >= 400:
+            # 单节点测速失败（503 等）不算致命：返回空 dict，按超时处理
+            if "/delay?" in path:
+                return {}
+            sys.exit(f"API {method} {path} 返回 {resp.status}: "
+                     f"{raw.decode(errors='replace')[:200]}")
+        try:
+            return json.loads(raw) if raw.strip() else {}
+        except json.JSONDecodeError:
+            return {}
+
+    return req
+
+
+def probe_http(port, secret):
+    """探测 http://127.0.0.1:<port> 是不是 mihomo API。"""
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+        headers = {}
+        if secret:
+            headers["Authorization"] = f"Bearer {secret}"
+        conn.request("GET", "/version", headers=headers)
+        resp = conn.getresponse()
+        ok = resp.status == 200 and b"version" in resp.read()
+        conn.close()
+        return ok
+    except OSError:
+        return False
+
+
+def find_client():
+    """按优先级定位 mihomo API，返回 req 调用函数。"""
+    secret = os.environ.get("CLASH_PICK_SECRET")
+
     sock = os.environ.get("CLASH_PICK_SOCK")
-    if not sock:
-        matches = sorted(glob.glob(
-            "/run/clash-verge-service/users/*/verge-mihomo.sock"))
-        sock = matches[0] if matches else None
-    if sock and os.path.exists(sock):
-        return ["--unix-socket", sock], "http://localhost"
+    if sock:
+        if IS_WINDOWS:
+            sys.exit("Windows 不支持 unix socket，请改用 CLASH_PICK_API")
+        if not os.path.exists(sock):
+            sys.exit(f"CLASH_PICK_SOCK 指向的 socket 不存在: {sock}")
+        return make_client(sock_path=sock, secret=secret)
+
     api = os.environ.get("CLASH_PICK_API")
     if api:
-        return [], api.rstrip("/")
+        return make_client(api_url=api, secret=secret)
+
+    if not IS_WINDOWS:
+        matches = sorted(glob.glob(
+            "/run/clash-verge-service/users/*/verge-mihomo.sock"))
+        if matches:
+            return make_client(sock_path=matches[0], secret=secret)
+
+    for port in DEFAULT_API_PORTS:
+        if probe_http(port, secret):
+            return make_client(api_url=f"http://127.0.0.1:{port}",
+                               secret=secret)
+
+    hint = ("  - Windows: 打开 Clash Verge → 设置 → 外部控制器，\n"
+            "      把地址填入 CLASH_PICK_API（如 http://127.0.0.1:9097），\n"
+            "      密钥填入 CLASH_PICK_SECRET")
     sys.exit(
-        "找不到 mihomo API。\n"
-        "  - 确认 Clash Verge 正在运行\n"
-        "  - 或设置 CLASH_PICK_SOCK=/path/to/verge-mihomo.sock\n"
-        "  - 或设置 CLASH_PICK_API=http://127.0.0.1:<external-controller端口>")
+        "找不到 mihomo API。请检查：\n"
+        "  - Clash Verge 正在运行\n"
+        + ("  - 或设置 CLASH_PICK_SOCK=/path/to/verge-mihomo.sock\n"
+           if not IS_WINDOWS else "")
+        + hint)
 
 
-CURL_PREFIX, API_BASE = None, None
+# 常见的默认代理组名关键词，按优先级排列
+DEFAULT_GROUP_HINTS = ("节点选择", "快速机场", "proxy", "select", "节点", "机场")
 
 
-def api(path, method="GET", data=None):
-    global CURL_PREFIX, API_BASE
-    if CURL_PREFIX is None:
-        CURL_PREFIX, API_BASE = find_base()
-    cmd = ["curl", "-s", *CURL_PREFIX, "-X", method, f"{API_BASE}{path}"]
-    if data is not None:
-        cmd += ["-d", json.dumps(data)]
-    out = subprocess.run(cmd, capture_output=True, text=True)
-    if out.returncode != 0:
-        sys.exit(f"API 调用失败: {out.stderr.strip()}")
-    try:
-        return json.loads(out.stdout) if out.stdout.strip() else {}
-    except json.JSONDecodeError:
-        return {}
+def pick_default_group(groups):
+    """没指定 --group 时自动选择：优先匹配常见组名，否则取第一个 Selector 组。"""
+    for hint in DEFAULT_GROUP_HINTS:
+        for name in groups:
+            if hint.lower() in name.lower():
+                return name
+    if groups:
+        return next(iter(groups))
+    sys.exit("没有找到任何 Selector 类型的代理组，请检查 Clash 配置")
 
 
 def find_group(query, proxies):
-    """模糊匹配组名（忽略 emoji 差异）。"""
+    """模糊匹配组名；query 为 None 时自动选择默认组。"""
     groups = {n: p for n, p in proxies.items() if p["type"] == "Selector"}
+    if query is None:
+        return pick_default_group(groups)
     if query in groups:
         return query
     for name in groups:
-        if query in name:
+        if query.lower() in name.lower():
             return name
     sys.exit(f"找不到组 '{query}'，可选: {list(groups)}")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--group", default="快速机场", help="代理组名（模糊匹配）")
+    ap.add_argument("--group", default=None,
+                    help="代理组名（模糊匹配）；不指定时自动选择常见默认组")
     ap.add_argument("--list", action="store_true", help="只测速不切换")
     ap.add_argument("--top", type=int, default=10, help="显示前 N 个")
     args = ap.parse_args()
+
+    api = find_client()
 
     proxies = api("/proxies")["proxies"]
     group = find_group(args.group, proxies)

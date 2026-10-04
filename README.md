@@ -15,13 +15,20 @@
 npx skills add zjinys/proxy-pick
 ```
 
-Skill **自包含**：自带的 `templates/clash-pick` 脚本会被 AI 直接调用，不需要预装任何命令。脚本零依赖，只需要系统有 `python3` 和 `curl`。
+Skill **自包含**：自带跨平台脚本，不需要预装任何命令：
 
-脚本会自动探测 `/run/clash-verge-service/users/*/verge-mihomo.sock`。探测不到时可用环境变量指定：
+| 平台 | 脚本 | 依赖 |
+|---|---|---|
+| Linux / macOS | `templates/clash-pick` | Python 3 标准库 |
+| Windows + Python | `templates/clash-pick` | Python 3 标准库 |
+| Windows 无 Python | `templates/clash-pick.ps1` | Windows 自带 PowerShell |
+
+API 自动探测：Linux 探测 unix socket（`/run/clash-verge-service/users/*/verge-mihomo.sock`），Windows/兜底探测 `http://127.0.0.1:9097` 和 `:9090`。探测不到时可用环境变量指定：
 
 ```bash
-export CLASH_PICK_SOCK=/path/to/verge-mihomo.sock   # unix socket
-export CLASH_PICK_API=http://127.0.0.1:9097          # 或 HTTP API
+export CLASH_PICK_API=http://127.0.0.1:9097   # 外部控制器地址
+export CLASH_PICK_SECRET=<密钥>               # mihomo secret（如设置了）
+export CLASH_PICK_SOCK=/path/to/verge-mihomo.sock  # 仅 Linux/macOS
 ```
 
 ### 可选：安装为系统命令
@@ -31,6 +38,12 @@ export CLASH_PICK_API=http://127.0.0.1:9097          # 或 HTTP API
 ```bash
 sudo cp templates/clash-pick /usr/local/bin/clash-pick
 sudo chmod +x /usr/local/bin/clash-pick
+```
+
+Windows 直接用：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File templates\clash-pick.ps1 -List
 ```
 
 ## 使用
@@ -49,24 +62,26 @@ AI 会自动调用 `clash-pick` 完成测速、切换、报告结果。
 ## clash-pick 命令参考
 
 ```bash
-clash-pick                    # 测速默认组(快速机场)，自动切换到最快节点
+clash-pick                    # 自动选择默认组（匹配 节点选择/快速机场/Proxy 等），测速并切到最快
 clash-pick --list             # 只测速并列排名，不切换
-clash-pick --group 漏网之鱼   # 指定代理组（模糊匹配）
+clash-pick --group 漏网之鱼   # 指定代理组（模糊匹配，中英文均可）
 clash-pick --top 5            # 只显示前 5 名
 ```
+
+不指定 `--group` 时按 `节点选择` > `快速机场` > `proxy` > `select` > `节点` > `机场` 的优先级自动匹配；都不匹配则取第一个 Selector 组。
 
 ## 要求
 
 - Clash Verge (mihomo) 运行中
-- Python 3
-- curl
+- Linux/macOS/Windows 有 Python 3，或 Windows 自带 PowerShell
 
 ## 环境变量
 
 | 变量 | 用途 |
 |---|---|
-| `CLASH_PICK_SOCK` | 覆盖 mihomo unix socket 路径（默认自动探测） |
-| `CLASH_PICK_API` | 改用 HTTP API，如 `http://127.0.0.1:9097` |
+| `CLASH_PICK_SOCK` | 覆盖 mihomo unix socket 路径（仅 Linux/macOS，默认自动探测） |
+| `CLASH_PICK_API` | 外部控制器地址，如 `http://127.0.0.1:9097` |
+| `CLASH_PICK_SECRET` | 外部控制器密钥（对应 mihomo 配置的 secret） |
 
 ## License
 
