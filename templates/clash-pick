@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""clash-pick: 刷新 Clash Verge (mihomo) 代理节点延迟，选最快的设为当前。
+
+用法:
+  clash-pick                 # 刷新默认组(快速机场)，选最快节点
+  clash-pick --list          # 只测速并列出来，不切换
+  clash-pick --group 漏网之鱼 # 指定组（模糊匹配）
+  clash-pick --top 5         # 只显示前 N 个
+"""
+import json, sys, subprocess, urllib.parse, argparse
+
+SOCK = "/run/clash-verge-service/users/1000/verge-mihomo.sock"
+TEST_URL = "http://www.gstatic.com/generate_204"
+TIMEOUT = 3000
+
+
+def api(path, method="GET", data=None):
+    cmd = ["curl", "-s", "--unix-socket", SOCK, "-X", method,
+           f"http://localhost{path}"]
+    if data is not None:
+        cmd += ["-d", json.dumps(data)]
+    out = subprocess.run(cmd, capture_output=True, text=True)
+    if out.returncode != 0:
+        sys.exit(f"API 调用失败: {out.stderr.strip()}")
+    try:
+        return json.loads(out.stdout) if out.stdout.strip() else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def find_group(query, proxies):
+    """模糊匹配组名（忽略 emoji 差异）。"""
+    groups = {n: p for n, p in proxies.items() if p["type"] == "Selector"}
+    if query in groups:
+        return query
+    for name in groups:
+        if query in name:
+            return name
+    sys.exit(f"找不到组 '{query}'，可选: {list(groups)}")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--group", default="快速机场", help="代理组名（模糊匹配）")
+    ap.add_argument("--list", action="store_true", help="只测速不切换")
+    ap.add_argument("--top", type=int, default=10, help="显示前 N 个")
+    args = ap.parse_args()
+
+    proxies = api("/proxies")["proxies"]
+    group = find_group(args.group, proxies)
+    current = proxies[group]["now"]
+
+    # 收集真实节点（排除组、信息节点）
+    nodes = [n for n in proxies[group]["all"]
+             if proxies.get(n, {}).get("type") not in
+             ("Selector", "URLTest", "Fallback", "Direct", "Reject")
+             and not any(k in n for k in ("订阅", "流量", "到期", "下载", "官网"))]
+
+    print(f"组: {group}  当前: {current}  候选节点: {len(nodes)}")
+    print(f"测速中 ({TEST_URL}, timeout={TIMEOUT}ms)...")
+
+    results = []
+    for name in nodes:
+        r = api(f"/proxies/{urllib.parse.quote(name)}/delay"
+                f"?url={urllib.parse.quote(TEST_URL)}&timeout={TIMEOUT}")
+        delay = r.get("delay", 0)
+        results.append((delay, name))
+
+    alive = sorted([r for r in results if r[0] > 0])
+    dead = [r for r in results if r[0] == 0]
+
+    print(f"\n可用 {len(alive)} / 超时 {len(dead)}:")
+    for i, (delay, name) in enumerate(alive[:args.top]):
+        marker = " ← 当前" if name == current else ""
+        print(f"  {i+1:2}. {delay:5}ms  {name}{marker}")
+    if dead:
+        print(f"  ✗ 超时: {', '.join(n for _, n in dead[:5])}"
+              + (" ..." if len(dead) > 5 else ""))
+
+    if not alive:
+        sys.exit("\n没有可用节点！")
+    if args.list:
+        return
+
+    best_delay, best = alive[0]
+    if best == current:
+        print(f"\n当前节点已是最快 ({best_delay}ms)，不切换")
+        return
+    api(f"/proxies/{urllib.parse.quote(group)}", "PUT", {"name": best})
+    print(f"\n已切换: {current} → {best} ({best_delay}ms)")
+
+
+if __name__ == "__main__":
+    main()
