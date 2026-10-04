@@ -7,9 +7,9 @@ description: 切换/查看 Clash Verge (mihomo) 代理节点。当用户说"切�
 
 > 管理 Clash Verge (mihomo) 代理节点：刷新延迟、选出最快节点并切换。**自包含**，不依赖用户预装任何命令。
 
-## 脚本定位（每次使用前先执行）
+## 怎么调用（零安装，直接运行）
 
-按平台从本 Skill 的 `templates/`（与本文件同目录）选实现：
+**不需要任何安装步骤。** 脚本就在本 Skill 的 `templates/` 目录（与本文件同目录），按平台选一个调用形式，直接执行：
 
 | 平台 | 调用形式 |
 |---|---|
@@ -17,9 +17,9 @@ description: 切换/查看 Clash Verge (mihomo) 代理节点。当用户说"切�
 | Windows + Python | `python <skill目录>\templates\clash-pick --list` |
 | Windows 无 Python | `powershell -ExecutionPolicy Bypass -File <skill目录>\templates\clash-pick.ps1 -List` |
 
-若 `command -v clash-pick` 有输出，也可直接用 `clash-pick`。以下文档里的 `clash-pick ...` 一律替换为按上表选出的调用形式。
-
 两个实现都只依赖平台自带运行时（Python 3 标准库 / Windows 自带 PowerShell），不需要 curl、pip 包等任何额外安装。注意 PowerShell 版参数是 `-List`、`-Group`、`-Top`（单横线）。
+
+若 `command -v clash-pick` 有输出（用户自己装过），也可直接用 `clash-pick`。以下文档里的 `clash-pick ...` 一律替换为按上表选出的调用形式。
 
 ## 前置要求
 
