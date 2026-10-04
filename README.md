@@ -11,31 +11,27 @@
 
 ## 安装
 
-### 1. 安装 clash-pick 命令
+```bash
+npx skills add zjinys/proxy-pick
+```
+
+Skill **自包含**：自带的 `templates/clash-pick` 脚本会被 AI 直接调用，不需要预装任何命令。脚本零依赖，只需要系统有 `python3` 和 `curl`。
+
+脚本会自动探测 `/run/clash-verge-service/users/*/verge-mihomo.sock`。探测不到时可用环境变量指定：
+
+```bash
+export CLASH_PICK_SOCK=/path/to/verge-mihomo.sock   # unix socket
+export CLASH_PICK_API=http://127.0.0.1:9097          # 或 HTTP API
+```
+
+### 可选：安装为系统命令
+
+想直接在终端里敲 `clash-pick`：
 
 ```bash
 sudo cp templates/clash-pick /usr/local/bin/clash-pick
 sudo chmod +x /usr/local/bin/clash-pick
 ```
-
-确认你的 Clash Verge socket 路径：
-
-```bash
-# 默认 uid=1000
-ls /run/clash-verge-service/users/1000/verge-mihomo.sock
-
-# 如果 uid 不是 1000，先查自己的 uid
-id -u
-# 然后修改 /usr/local/bin/clash-pick 里的 SOCK 变量
-```
-
-### 2. 安装 Skill
-
-```bash
-npx skills add zjinys/proxy-pick
-```
-
-或者手动复制到你的 Agent skills 目录。
 
 ## 使用
 
@@ -64,6 +60,13 @@ clash-pick --top 5            # 只显示前 5 名
 - Clash Verge (mihomo) 运行中
 - Python 3
 - curl
+
+## 环境变量
+
+| 变量 | 用途 |
+|---|---|
+| `CLASH_PICK_SOCK` | 覆盖 mihomo unix socket 路径（默认自动探测） |
+| `CLASH_PICK_API` | 改用 HTTP API，如 `http://127.0.0.1:9097` |
 
 ## License
 

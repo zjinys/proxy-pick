@@ -1,23 +1,30 @@
 ---
 name: proxy-pick
-description: 在本机装有 clash-pick 命令时，用它切换/查看代理节点。当用户说"切代理/换个节点/代理太慢/给我找个快的节点/看看现在用的什么节点/代理能通吗"，或网络请求超时、访问境外服务失败需要换线路时使用。包含健康检查、延迟测速、自动切换最快节点、按需求推荐节点。
+description: 切换/查看 Clash Verge (mihomo) 代理节点。当用户说"切代理/换个节点/代理太慢/给我找个快的节点/看看现在用的什么节点/代理能通吗"，或网络请求超时、访问境外服务失败需要换线路时使用。包含健康检查、延迟测速、自动切换最快节点、按需求推荐节点。
 ---
 
 # proxy-pick
 
-> 基于本机 `clash-pick` 命令的代理节点管理 Skill。`clash-pick` 是一个操作 Clash Verge (mihomo) 的 CLI：刷新延迟、选出最快节点并切换。
+> 管理 Clash Verge (mihomo) 代理节点：刷新延迟、选出最快节点并切换。**自包含**，不依赖用户预装任何命令。
 
-## 前置检查
+## 脚本定位（每次使用前先执行）
 
-使用前必须确认 `clash-pick` 存在。以下任一条件不满足时，直接告诉用户"未检测到 clash-pick，请先安装"并停止，不要尝试替代方案：
+按优先级选一个，后面的所有 `clash-pick ...` 命令都替换成这个调用形式：
 
-```bash
-command -v clash-pick
-```
+1. `command -v clash-pick` 有输出 → 直接用 `clash-pick`
+2. 否则用本 Skill 自带的 `templates/clash-pick`（与本文件同目录），调用形式：
+   ```bash
+   python3 <skill目录>/templates/clash-pick --list
+   ```
 
-`clash-pick` 依赖：
-- Clash Verge (mihomo) 正在运行，且 unix socket 位于 `/run/clash-verge-service/users/<uid>/verge-mihomo.sock`
-- 当前用户有权限访问该 socket
+脚本零依赖，只需要系统有 `python3` 和 `curl`。
+
+## 前置要求
+
+- Clash Verge (mihomo) 正在运行
+- 能找到 API：脚本会自动探测 `/run/clash-verge-service/users/*/verge-mihomo.sock`；探测失败时按报错提示设置 `CLASH_PICK_SOCK` 或 `CLASH_PICK_API` 环境变量
+
+如果 API 连不上，直接把脚本报错原样告诉用户并停止，不要尝试其他代理方案。
 
 ## 核心命令
 
@@ -47,25 +54,19 @@ clash-pick --top 5            # 只显示前 5 名
 
 ## 边界
 
-- `clash-pick` 只操作 **Clash Verge (mihomo)**，不适用于 Clash for Windows / ClashX / Surge / V2Ray 等其他客户端。
-- 它只能切换节点，不能修改订阅、添加节点、改路由规则。
-- `--group` 只做模糊匹配（如 `--group 漏网` 匹配 `漏网之鱼`），如果匹配不到会列出所有可选组名。
-- 测速目标固定为 `http://www.gstatic.com/generate_204`，超时 3 秒；国内直连快的节点不代表访问特定境外服务也快。
-- 切换节点只影响**系统代理流量**，不走代理的进程不受影响。
+- 只支持 **Clash Verge (mihomo)**，不适用于 Clash for Windows / ClashX / Surge / V2Ray 等其他客户端。
+- 只能切换节点，不能修改订阅、添加节点、改路由规则。
+- `--group` 只做模糊匹配（如 `--group 漏网` 匹配 `漏网之鱼`），匹配不到会列出所有可选组名。
+- 测速目标固定为 `http://www.gstatic.com/generate_204`，超时 3 秒；对 gstatic 快的节点不代表访问特定境外服务也快。
+- 切换节点只影响**走系统代理的流量**，不走代理的进程不受影响。
 
-## 安装 clash-pick
+## 可选：安装为系统命令
 
-如果用户还没有 `clash-pick`，提供本 Skill 自带的实现：
+如果用户想直接在终端里用：
 
 ```bash
-# 1. 复制脚本到 PATH
 sudo cp templates/clash-pick /usr/local/bin/clash-pick
 sudo chmod +x /usr/local/bin/clash-pick
-
-# 2. 确认 Clash Verge 的 socket 路径
-#    默认是 /run/clash-verge-service/users/1000/verge-mihomo.sock
-#    如果不是 1000，改成当前用户的 uid:
-#    id -u
 ```
 
-脚本零依赖，只需要系统有 `curl` 和 `python3`。
+这是可选项——Skill 本身不需要这一步。

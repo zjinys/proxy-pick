@@ -6,17 +6,50 @@
   clash-pick --list          # 只测速并列出来，不切换
   clash-pick --group 漏网之鱼 # 指定组（模糊匹配）
   clash-pick --top 5         # 只显示前 N 个
-"""
-import json, sys, subprocess, urllib.parse, argparse
 
-SOCK = "/run/clash-verge-service/users/1000/verge-mihomo.sock"
+环境变量:
+  CLASH_PICK_SOCK   覆盖 mihomo unix socket 路径
+  CLASH_PICK_API    改用 HTTP API，如 http://127.0.0.1:9097（优先级低于 SOCK）
+"""
+import glob
+import json
+import os
+import subprocess
+import sys
+import urllib.parse
+import argparse
+
 TEST_URL = "http://www.gstatic.com/generate_204"
 TIMEOUT = 3000
 
 
+def find_base():
+    """返回 (curl 前缀参数, API base)。优先 unix socket，自动探测 uid。"""
+    sock = os.environ.get("CLASH_PICK_SOCK")
+    if not sock:
+        matches = sorted(glob.glob(
+            "/run/clash-verge-service/users/*/verge-mihomo.sock"))
+        sock = matches[0] if matches else None
+    if sock and os.path.exists(sock):
+        return ["--unix-socket", sock], "http://localhost"
+    api = os.environ.get("CLASH_PICK_API")
+    if api:
+        return [], api.rstrip("/")
+    sys.exit(
+        "找不到 mihomo API。\n"
+        "  - 确认 Clash Verge 正在运行\n"
+        "  - 或设置 CLASH_PICK_SOCK=/path/to/verge-mihomo.sock\n"
+        "  - 或设置 CLASH_PICK_API=http://127.0.0.1:<external-controller端口>")
+
+
+CURL_PREFIX, API_BASE = None, None
+
+
 def api(path, method="GET", data=None):
-    cmd = ["curl", "-s", "--unix-socket", SOCK, "-X", method,
-           f"http://localhost{path}"]
+    global CURL_PREFIX, API_BASE
+    if CURL_PREFIX is None:
+        CURL_PREFIX, API_BASE = find_base()
+    cmd = ["curl", "-s", *CURL_PREFIX, "-X", method, f"{API_BASE}{path}"]
     if data is not None:
         cmd += ["-d", json.dumps(data)]
     out = subprocess.run(cmd, capture_output=True, text=True)
